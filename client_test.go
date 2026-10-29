@@ -103,6 +103,12 @@ func TestNew_EmptyBaseURL(t *testing.T) {
 	}
 }
 
+func TestNew_EmptyAPIKey(t *testing.T) {
+	if _, err := decision.New(decision.Config{APIType: decision.APITypeTypesafe, BaseURL: "http://localhost"}, http.DefaultClient); err == nil {
+		t.Error("want an error when no API key is set")
+	}
+}
+
 func TestNew_NilClient(t *testing.T) {
 	if _, err := decision.New(decision.Config{APIType: decision.APITypeTypesafe, BaseURL: "http://localhost"}, nil); err == nil {
 		t.Error("want an error when no http client is set")
@@ -198,6 +204,97 @@ func TestDecide_MissingAnswer(t *testing.T) {
 	_, err := client.Decide(context.Background(), request)
 	if err == nil || !strings.Contains(err.Error(), `no answer for "question-id"`) {
 		t.Fatalf("missing answer error = %v", err)
+	}
+}
+
+func TestDecide_MissingAnswerOrder(t *testing.T) {
+	t.Parallel()
+
+	srv := testClient(t, func(res http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(res, `{"model":"test-model","answers":{},"usage":{"input_tokens":1,"output_tokens":1}}`)
+	})
+	client := newClient(t, srv, decision.APITypeTypesafe, testModel)
+	request := &decision.Request{
+		Questions: map[string]decision.Question{
+			"second-question": {Type: questionTypeNoul},
+			"first-question":  {Type: questionTypeNoul},
+		},
+	}
+
+	// Identical requests must name the same missing question, so the loop
+	// follows a stable order.
+	_, err := client.Decide(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), `no answer for "first-question"`) {
+		t.Fatalf("missing answer error = %v, want the lexicographically first question", err)
+	}
+}
+
+func TestDecide_AnswerPayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		answer string
+	}{
+		{name: "noul without noul value", answer: `{"type":"noul"}`},
+		{name: "choice without choice", answer: `{"type":"choice"}`},
+		{name: "score without score", answer: `{"type":"score"}`},
+		{name: "unknown type", answer: `{"type":"nope"}`},
+	}
+
+	for _, testCase := range tests {
+		srv := testClient(t, func(res http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprintf(res, `{"model":"test-model","answers":{"question-id":%s},"usage":{"input_tokens":1,"output_tokens":1}}`, testCase.answer)
+		})
+		client := newClient(t, srv, decision.APITypeTypesafe, testModel)
+		request := &decision.Request{
+			Questions: map[string]decision.Question{"question-id": {Type: questionTypeNoul}},
+		}
+
+		_, err := client.Decide(context.Background(), request)
+		if err == nil {
+			t.Fatalf("%s: want an error, got nil", testCase.name)
+		}
+	}
+}
+
+func TestDecide_RefusalAnswer(t *testing.T) {
+	t.Parallel()
+
+	// A refusal is a valid answer with an empty payload.
+	srv := testClient(t, func(res http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(res, `{"model":"test-model","answers":{"question-id":{"type":"refusal"}},"usage":{"input_tokens":1,"output_tokens":1}}`)
+	})
+	client := newClient(t, srv, decision.APITypeTypesafe, testModel)
+	request := &decision.Request{
+		Questions: map[string]decision.Question{"question-id": {Type: questionTypeNoul}},
+	}
+
+	resp, err := client.Decide(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+
+	if got := resp.Answers["question-id"].Type; got != decision.TypeRefusal {
+		t.Errorf("answer type = %q, want refusal", got)
+	}
+}
+
+func TestDecide_TypesafeOmittedAnswers(t *testing.T) {
+	t.Parallel()
+
+	srv := testClient(t, func(res http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(res, `{"model":"test-model","usage":{"input_tokens":1,"output_tokens":1}}`)
+	})
+	client := newClient(t, srv, decision.APITypeTypesafe, testModel)
+
+	resp, err := client.Decide(context.Background(), &decision.Request{State: "hi", Questions: map[string]decision.Question{}})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+
+	if resp.Answers == nil {
+		t.Error("Answers is nil, want an empty map")
 	}
 }
 

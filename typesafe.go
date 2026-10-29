@@ -43,5 +43,11 @@ func (Typesafe) DecodeResponse(data []byte) (*Response, error) {
 		return nil, err
 	}
 
+	// Normalize so that a body without "answers" has the same shape as the
+	// OpenAI decoder: an empty map, never nil.
+	if out.Answers == nil {
+		out.Answers = map[string]Answer{}
+	}
+
 	return &out, nil
 }

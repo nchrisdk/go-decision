@@ -69,8 +69,10 @@ urgent := resp.Answers["is_urgent"]
 dept := resp.Answers["department"]
 frustr := resp.Answers["frustration"]
 
-// Use probabilities and confidence as decision signals.
-if *urgent.Noul > 0.8 && *dept.Confidence > 0.75 {
+// A question the API refused has no payload, so check the answer type
+// before reading it.
+if urgent.Type == decision.TypeNoul && *urgent.Noul > 0.8 &&
+	dept.Type == decision.TypeChoice && *dept.Confidence > 0.75 {
 	fmt.Println("route to", dept.Choice)
 }
 ```
@@ -84,6 +86,9 @@ if *urgent.Noul > 0.8 && *dept.Confidence > 0.75 {
 | `score`  | `ScoreCriteria` (ordered levels)    | `Score`, `Legend`, `Probabilities`, `Confidence` |
 
 `State` and `Instructions` may be a string, object, or array.
+
+An answer with `Type == "refusal"` means the API declined to decide that
+question; it carries no payload, so check `Answer.Type` before reading fields.
 
 ## Dialect notes
 

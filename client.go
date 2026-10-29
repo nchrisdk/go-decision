@@ -42,6 +42,10 @@ func New(cfg Config, client *http.Client) (*Client, error) {
 		return nil, err
 	}
 
+	if cfg.APIKey == "" {
+		return nil, errors.New("decision: no API key set")
+	}
+
 	if cfg.BaseURL == "" {
 		return nil, errors.New("decision: no base URL set")
 	}
@@ -142,11 +146,42 @@ func (c *Client) Decide(ctx context.Context, req *Request) (*Response, error) {
 	return out, nil
 }
 
+// validateAnswers checks that the response answers every requested question
+// with the payload its type promises.
 func validateAnswers(request *Request, response *Response) error {
-	for questionID := range request.Questions {
-		if _, ok := response.Answers[questionID]; !ok {
+	for _, questionID := range sortedKeys(request.Questions) {
+		answer, ok := response.Answers[questionID]
+		if !ok {
 			return fmt.Errorf("decision: response has no answer for %q", questionID)
 		}
+
+		if err := answerPayload(answer); err != nil {
+			return fmt.Errorf("decision: answer for %q: %w", questionID, err)
+		}
+	}
+
+	return nil
+}
+
+// answerPayload checks that an answer carries the payload its type promises.
+// A refusal is a valid answer with an empty payload.
+func answerPayload(answer Answer) error {
+	switch answer.Type {
+	case TypeNoul:
+		if answer.Noul == nil {
+			return errors.New("no noul value")
+		}
+	case TypeChoice:
+		if answer.Choice == "" {
+			return errors.New("no choice")
+		}
+	case TypeScore:
+		if answer.Score == nil {
+			return errors.New("no score")
+		}
+	case TypeRefusal:
+	default:
+		return fmt.Errorf("unknown type %q", answer.Type)
 	}
 
 	return nil

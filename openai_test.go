@@ -125,6 +125,33 @@ func TestOpenAI_DecodeResponse_Refusal(t *testing.T) {
 	}
 }
 
+func TestOpenAI_DecodeResponse_FloatingScoreValues(t *testing.T) {
+	t.Parallel()
+
+	// A level value of 1.0 must normalize to the index "1", not "1.0".
+	resp, err := decision.OpenAI{}.DecodeResponse([]byte(`{
+		"answers": [
+			{"type": "score", "name": "frustration", "score": 1.05,
+				"probabilities": [{"value": 0.0, "label": "Calm", "probability": 0.0},
+					{"value": 1.0, "label": "Frustrated", "probability": 0.95}],
+				"confidence": 0.9}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeResponse: %v", err)
+	}
+
+	frustration := resp.Answers["frustration"]
+
+	if frustration.Probabilities["0"] != 0.0 || frustration.Probabilities["1"] != 0.95 {
+		t.Errorf("score probabilities = %v, want keys %q and %q", frustration.Probabilities, "0", "1")
+	}
+
+	if frustration.Legend["1"] != "Frustrated" {
+		t.Errorf("score legend = %v", frustration.Legend)
+	}
+}
+
 // encode renders a request and returns the wire format as a map.
 func encode(t *testing.T, a decision.Adapter, req *decision.Request, model string) map[string]any {
 	t.Helper()

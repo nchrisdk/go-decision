@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 // openAIPath is the API path of the OpenAI decisions endpoint.
@@ -286,7 +287,8 @@ func text(value any) string {
 	return string(data)
 }
 
-// rawText renders a raw JSON scalar as a string.
+// rawText renders a raw JSON scalar as a string. Numbers are normalized, so
+// a level value of 1.0 maps to the index "1", not "1.0".
 func rawText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -297,6 +299,10 @@ func rawText(raw json.RawMessage) string {
 	err := json.Unmarshal(raw, &textValue)
 	if err == nil {
 		return textValue
+	}
+
+	if number, err := strconv.ParseFloat(string(raw), 64); err == nil {
+		return strconv.FormatFloat(number, 'f', -1, 64)
 	}
 
 	return string(raw)
